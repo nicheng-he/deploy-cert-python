@@ -1,0 +1,241 @@
+name: build.yml
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  create_release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      DATETIME: ${{ steps.set-vars.outputs.DATETIME }}
+      COMMIT_HASH: ${{ steps.set-vars.outputs.COMMIT_HASH }}
+      BRANCH_NAME: ${{ steps.set-vars.outputs.BRANCH_NAME }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set Vars
+        id: set-vars
+        shell: bash
+        run: |
+          COMMIT_HASH='${{ github.sha }}'
+          echo "COMMIT_HASH=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          
+          BRANCH_NAME=$(echo $GITHUB_REF | sed 's/refs\/\(heads\|tags\)\///')
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "BRANCH_NAME:$BRANCH_NAME"
+          
+          DATETIME=$(date +"%Y-%m-%d %H:%M:%S")
+          echo "DATETIME=$DATETIME" >> $GITHUB_OUTPUT
+          
+          # 判断是否是 v* 格式（以 v 开头，后面是数字或点）
+          if [[ "$BRANCH_NAME" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            TAG_NAME="$BRANCH_NAME"
+          else
+            TAG_NAME="${BRANCH_NAME}-$(date +"%Y%m%d%H%M%S")-beta"
+          fi
+          echo "TAG_NAME:$TAG_NAME"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.set-vars.outputs.TAG_NAME }}
+          release_name: Release ${{ steps.set-vars.outputs.TAG_NAME }}
+          draft: false
+          prerelease: ${{ endsWith(steps.set-vars.outputs.TAG_NAME, '-beta') }}
+
+      - name: Generate build info
+        shell: bash
+        run: |
+          cat > build_info.py << EOF
+          DATETIME = '${{ steps.set-vars.outputs.DATETIME }}'
+          BRANCH_NAME = '${{ steps.set-vars.outputs.BRANCH_NAME }}'
+          COMMIT_HASH = '${{ steps.set-vars.outputs.COMMIT_HASH }}'
+
+          print(f"构建时间: {DATETIME}")
+          print(f"构建分支: {BRANCH_NAME}")
+          print(f"Git Hash: {COMMIT_HASH}")
+          EOF
+
+      - name: Upload build info
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-info
+          path: build_info.py
+
+
+  build:
+    needs: create_release
+    runs-on: ${{ matrix.runs-on || matrix.os }}
+    strategy:
+      matrix:
+        include:
+#          - os: ubuntu-20.04
+#            arch: amd64
+          - os: macos-latest
+            arch: arm64
+          - os: macos-13
+            arch: x64
+          - os: windows-latest
+            arch: amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build info
+        uses: actions/download-artifact@v4
+        with:
+          name: build-info
+          path: .
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Package application
+        run: pyinstaller --onefile --hidden-import=build_info --runtime-hook=build_info.py main.py
+
+      - name: Set Vars
+        id: set-vars
+        shell: bash
+        run: |
+          OS_NAME=$(echo "${{ runner.os }}" | awk '{print tolower($0)}')
+          echo "OS_NAME=$OS_NAME" >> $GITHUB_OUTPUT
+          
+          ARCH=$(uname -m | awk '{print tolower($0)}')
+          echo "ARCH=$ARCH" >> $GITHUB_OUTPUT
+          if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
+            echo "ARCH_NAME=amd64"
+          elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            echo "ARCH_NAME=arm64"
+          elif [ "$ARCH" = "i686" ] || [ "$ARCH" = "x86" ]; then
+            echo "ARCH_NAME=x86"
+          else
+            echo "ARCH_NAME=unknown"
+          fi >> $GITHUB_OUTPUT
+          
+          if [[ "$OS_NAME" == 'windows' ]]; then
+            echo "BINARY_SUFFIX=.exe" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "OS_NAME:${OS_NAME}"
+          echo "ARCH:${ARCH}"
+
+      - name: Upload binary to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: dist/main${{ steps.set-vars.outputs.BINARY_SUFFIX }}
+          asset_name: deploy-cert-python-${{ steps.set-vars.outputs.OS_NAME }}-${{ steps.set-vars.outputs.ARCH_NAME }}${{ steps.set-vars.outputs.BINARY_SUFFIX }}
+          asset_content_type: application/octet-stream
+
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: deploy-cert-python-${{ steps.set-vars.outputs.OS_NAME }}-${{ steps.set-vars.outputs.ARCH_NAME }}
+#          path: dist/main${{ steps.set-vars.outputs.BINARY_SUFFIX }}
+
+
+  build-docker:
+    needs: create_release
+    runs-on: ubuntu-latest
+    strategy:
+        matrix:
+          platform:
+            - linux/amd64
+            - linux/arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-arch support)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Download build info
+        uses: actions/download-artifact@v4
+        with:
+          name: build-info
+          path: .
+
+      - name: Set Vars
+        id: set-vars
+        shell: bash
+        run: |
+          echo "PLATFORM_SLUG=$(echo "${{ matrix.platform }}" | sed 's/\//-/g')" >> $GITHUB_ENV
+
+      - name:  Build for ${{ matrix.platform }}
+        run: |
+          docker run --rm \
+          -v "$(pwd)":/app \
+          --platform ${{ matrix.platform }} \
+          python:3.11 \
+          sh -c "cd /app && pip install pyinstaller && pip install -r requirements.txt && pyinstaller --onefile --hidden-import=build_info --runtime-hook=build_info.py main.py"
+
+      - name: Upload binary to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: dist/main
+          asset_name: deploy-cert-python-${{ env.PLATFORM_SLUG }}
+          asset_content_type: application/octet-stream
+
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: deploy-cert-python-docker-build-${{ env.PLATFORM_SLUG }}
+#          path: dist/main
+
+
+#  buildx-docker:
+#    needs: create_release
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Download build info
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: build-info
+#          path: .
+#      - name: Set up Docker Buildx
+#        uses: docker/setup-buildx-action@v3
+#
+#      - name: Build and push
+#        uses: docker/build-push-action@v5
+#        with:
+#          context: .
+#          platforms: linux/amd64, linux/arm64
+#          push: false
+#          outputs: type=local,dest=./dist
+#
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: deploy-cert-python-docker-build
+#          path: dist/
