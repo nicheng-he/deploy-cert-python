@@ -1,0 +1,39 @@
+name: DeployCertByHTTPAccess
+icon: arcticons:access
+title: 通过HTTP服务部署证书授权
+group: null
+desc: null
+setting: null
+sysSetting: null
+type: custom
+disabled: false
+version: null
+pluginType: access
+author: yhliu
+input:
+  baseURL:
+    title: 请求地址
+    helper: 请求地址
+    component:
+      placeholder: http://xxxxxx:9527
+    required: true
+  token:
+    title: 鉴权信息
+    helper: Token
+    required: true
+    encrypt: true
+    component:
+      name: a-input
+      allowClear: true
+showRunStrategy: false
+default:
+  strategy:
+    runStrategy: 1
+content: |
+
+  const { BaseAccess } = await import("@certd/pipeline")
+  // 需要返回一个继承BaseAccess的类
+  return class DeployCertByHTTPAccess extends BaseAccess {
+    baseURL;
+    token;
+  }

@@ -1,0 +1,101 @@
+name: DeployCertByHTTP
+icon: carbon:http
+title: 通过HTTP服务部署证书
+group: other
+desc: null
+setting: null
+sysSetting: null
+type: custom
+disabled: false
+version: null
+pluginType: deploy
+author: yhliu
+input:
+  accessId:
+    title: Access授权
+    helper: xxxx的授权
+    component:
+      name: access-selector
+      type: yhliu/DeployCertByHTTPAccess
+    required: true
+  cert:
+    title: 前置任务证书
+    helper: 请选择前置任务产生的证书
+    component:
+      name: output-selector
+      vModel: modelValue
+      from:
+        - ':cert:'
+    required: true
+  certDomains:
+    title: 当前证书域名
+    component:
+      name: cert-domains-getter
+    mergeScript: |
+      return {
+        component:{
+            inputKey: ctx.compute(({form})=>{
+              return form.cert
+            }),
+        }
+      }
+    required: true
+showRunStrategy: false
+default:
+  strategy:
+    runStrategy: 1
+dependPlugins:
+  - yhliu/DeployCertByHTTPAccess
+content: |
+
+  const { AbstractTaskPlugin } = await import("@certd/pipeline")
+  return class DemoTask extends AbstractTaskPlugin {
+    accessId;
+    cert;
+    certDomains;
+
+    async onInstance() {
+      this.access = await this.getAccess(this.accessId);
+      // console.log('this.access', this.access)
+    }
+
+    async execute() {
+      this.logger.info("certDomains:", this.certDomains);
+
+      const ret = await this.doRequest({
+        url: '/deploy-cert',
+        method: "post",
+        data: {
+          key: this.cert.key,
+          cert: this.cert.crt,
+        },
+      })
+      this.logger.info("ret:", ret);
+    }
+
+
+    async doRequest(data) {
+      data.headers = {
+        ...(data.headers || {}),
+        token: this.access.token,
+      }
+      return await this.doRequestWithoutAuth(data)
+    }
+
+    async doRequestWithoutAuth(data) {
+      // console.log('doRequest', data)
+      data.baseURL = this.access.baseURL;
+      // data.skipSslVerify = !!this.access.skipSslVerify
+      const ret = await this.http.request(data)
+        .catch(err => {
+          const { status, statusText, code, response } = err || {}
+          const { data } = response || {}
+          if (!!data) {
+            return data;
+          }
+          return { error: statusText || code || status }
+        });
+      if ('ok' === ret?.result) return ret;
+      throw new Error(ret?.error || '未知错误')
+    }
+  }
