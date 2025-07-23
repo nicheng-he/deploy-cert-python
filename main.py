@@ -65,7 +65,7 @@ global_token = args.token
 # 如：/data/ssl/example.com/cert.key
 base_path = args.base_path
 # 执行的脚本
-script_path = args.script
+script = args.script
 
 app = Flask(__name__)
 @app.route('/deploy-cert', methods=['POST'])
@@ -174,12 +174,13 @@ def get_ssl_certificate_domain(cert_pem):
 
 # 重启nginx
 def execute_shell():
-    """在延迟3秒后执行"""
+    if not script:
+        logging.info('无需执行脚本。')
+        return;
     time.sleep(3)
     try:
-        cmd = script_path if script_path else 'nginx -s reload'
         subprocess.run(
-            ['bash', '-c', cmd],
+            ['bash', '-c', script],
             check=True,
             capture_output=True,
             text=True
@@ -191,5 +192,5 @@ def execute_shell():
 if __name__ == '__main__':
     logging.info(f"证书部署目录 base_path: {base_path}")
     logging.info(f"鉴权 token: {global_token}")
-    if script_path: logging.info(f"执行脚本: {script_path}")
+    if script: logging.info(f"执行脚本: {script}")
     app.run(host='0.0.0.0', port=global_prot)
