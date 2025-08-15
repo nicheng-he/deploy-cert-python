@@ -59,7 +59,7 @@ input:
     title: 私钥key
     value: key
     helper: |
-      鉴权请求头例如：key、privateKey
+      私钥请求KEY例如：key、privateKey
       不满足可以自行填写
     required: true
     component:
@@ -71,7 +71,7 @@ input:
     title: 公钥key
     value: cert
     helper: |
-      鉴权请求头例如：cert、publicKey
+      公钥请求KEY例如：cert、publicKey
       不满足可以自行填写
     required: true
     component:
