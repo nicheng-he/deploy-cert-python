@@ -14,9 +14,20 @@ input:
   baseURL:
     title: 请求地址
     helper: 请填写完整请求地址
+    col:
+      span: 24
     component:
       placeholder: http://xxxxxx:9527/deploy-cert
     required: true
+  method:
+    title: 请求方式
+    value: post
+    component:
+      name: a-select
+      vModel: value
+      options:
+        - value: post
+        - value: put
   skipSslVerify:
     title: 忽略证书校验
     value: false
@@ -78,6 +89,7 @@ content: |
   // 需要返回一个继承BaseAccess的类
   return class DeployCertByHTTPAccess extends BaseAccess {
     baseURL;
+    method;
     skipSslVerify;
     
     tokenKey;

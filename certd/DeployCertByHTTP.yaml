@@ -62,11 +62,11 @@ content: |
     async execute() {
       this.logger.info("certDomains:", this.certDomains);
 
-      const { baseURL, privateKey, publicKey } = this.access || {}
+      const { baseURL, method, privateKey, publicKey } = this.access || {}
 
       const ret = await this.doRequest({
         url: baseURL,
-        method: "post",
+        method: method || "post",
         data: {
           [privateKey || 'key']: this.cert.key,
           [publicKey || 'cert']: this.cert.crt,
