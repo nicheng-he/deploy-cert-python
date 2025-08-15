@@ -62,12 +62,14 @@ content: |
     async execute() {
       this.logger.info("certDomains:", this.certDomains);
 
+      const { baseURL, privateKey, publicKey } = this.access || {}
+
       const ret = await this.doRequest({
-        url: '/deploy-cert',
+        url: baseURL,
         method: "post",
         data: {
-          key: this.cert.key,
-          cert: this.cert.crt,
+          [privateKey || 'key']: this.cert.key,
+          [publicKey || 'cert']: this.cert.crt,
         },
       })
       this.logger.info("ret:", ret);
@@ -75,17 +77,19 @@ content: |
 
 
     async doRequest(data) {
+      const { tokenKey, token } = this.access || {}
+
       data.headers = {
         ...(data.headers || {}),
-        token: this.access.token,
+        [tokenKey || 'token']: token,
       }
       return await this.doRequestWithoutAuth(data)
     }
 
     async doRequestWithoutAuth(data) {
       // console.log('doRequest', data)
-      data.baseURL = this.access.baseURL;
-      // data.skipSslVerify = !!this.access.skipSslVerify
+      // data.baseURL = this.access.baseURL;
+      data.skipSslVerify = !!this.access.skipSslVerify
       const ret = await this.http.request(data)
         .catch(err => {
           const { status, statusText, code, response } = err || {}
