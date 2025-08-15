@@ -11,6 +11,14 @@ version: null
 pluginType: deploy
 author: yhliu
 input:
+  baseURL:
+    title: 请求URL
+    helper: |
+      请求URL会覆盖授权的URL地址
+      不填写默认使用授权的URL地址
+    component:
+      name: a-input
+    required: false
   accessId:
     title: Access授权
     helper: xxxx的授权
@@ -40,6 +48,42 @@ input:
         }
       }
     required: true
+  otherJSON:
+    title: 其他JSON信息
+    helper: |
+      其他需要一起发送的JSON信息
+      key必须携带双引号
+      示例：{"key": "value"}
+    component:
+      name: a-textarea
+      autosize:
+        minRows: 5
+        maxRows: 10
+    mergeScript: |
+      return {
+          rules: [
+            {
+              trigger: 'blur',
+              validator: (rule, value, callback) => {
+                  console.log('otherJSON', 'validator', value)
+                  try {
+                    const obj = JSON.parse(value);
+                    if (typeof obj !== 'object') {
+                      throw new Error()
+                    } else if(Object.prototype.toString.call(obj) !== '[object Object]') {
+                      throw new Error('禁止使用数组')
+                    }
+                    callback()
+                  } catch (e) {
+                    function isChinese(str) {return /[\u4e00-\u9fa5]/.test(str);}
+                    console.log('otherJSON', 'e', e, value)
+                    callback(!isChinese(e?.message) ? '请检查JSON': e.message)
+                  }
+                },
+            },
+          ],
+      }
+    required: false
 showRunStrategy: false
 default:
   strategy:
@@ -47,12 +91,15 @@ default:
 dependPlugins:
   - yhliu/DeployCertByHTTPAccess
 content: |
-
   const { AbstractTaskPlugin } = await import("@certd/pipeline")
+
   return class DemoTask extends AbstractTaskPlugin {
+    baseURL;
     accessId;
     cert;
     certDomains;
+
+    otherJSON;
 
     async onInstance() {
       this.access = await this.getAccess(this.accessId);
@@ -61,13 +108,33 @@ content: |
 
     async execute() {
       this.logger.info("certDomains:", this.certDomains);
+      this.logger.info('otherJSON:', this.otherJSON);
+
+      let otherJSONObj = {};
+
+      try {
+        otherJSONObj = !!this.otherJSON ? JSON.parse(this.otherJSON) : {}
+      } catch (e) {
+        this.logger.warn('otherJSON格式化失败:', e)
+      }
+
+      if (typeof otherJSONObj !== 'object') {
+        otherJSONObj = {}
+        this.logger.warn('otherJSON格式化结果为非object时将重置')
+      } else if (Object.prototype.toString.call(otherJSONObj) !== '[object Object]') {
+        otherJSONObj = {}
+        this.logger.warn('otherJSON格式化结果为数组时将重置')
+      }
+
+      const { baseURL, method, privateKey, publicKey } = this.access || {}
 
       const ret = await this.doRequest({
-        url: '/deploy-cert',
-        method: "post",
+        url: this.baseURL?.trim?.() || baseURL?.trim?.(),
+        method: method || "post",
         data: {
-          key: this.cert.key,
-          cert: this.cert.crt,
+          ...otherJSONObj,
+          [privateKey || 'key']: this.cert.key,
+          [publicKey || 'cert']: this.cert.crt,
         },
       })
       this.logger.info("ret:", ret);
@@ -75,17 +142,19 @@ content: |
 
 
     async doRequest(data) {
+      const { tokenKey, token } = this.access || {}
+
       data.headers = {
         ...(data.headers || {}),
-        token: this.access.token,
+        [tokenKey || 'token']: token,
       }
       return await this.doRequestWithoutAuth(data)
     }
 
     async doRequestWithoutAuth(data) {
-      // console.log('doRequest', data)
-      data.baseURL = this.access.baseURL;
-      // data.skipSslVerify = !!this.access.skipSslVerify
+      // this.logger.info('doRequest', data)
+      // data.baseURL = this.access.baseURL;
+      data.skipSslVerify = !!this.access.skipSslVerify
       const ret = await this.http.request(data)
         .catch(err => {
           const { status, statusText, code, response } = err || {}

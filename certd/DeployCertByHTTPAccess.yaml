@@ -13,18 +13,72 @@ author: yhliu
 input:
   baseURL:
     title: 请求地址
-    helper: 请求地址
+    helper: 请填写完整请求地址
+    col:
+      span: 24
     component:
-      placeholder: http://xxxxxx:9527
+      placeholder: http://xxxxxx:9527/deploy-cert
     required: true
+  method:
+    title: 请求方式
+    value: post
+    component:
+      name: a-select
+      vModel: value
+      options:
+        - value: post
+        - value: put
+  skipSslVerify:
+    title: 忽略证书校验
+    value: false
+    component:
+      name: a-switch
+      vModel: checked
+    required: false
+  tokenKey:
+    title: 鉴权头
+    value: token
+    helper: |
+      鉴权请求头例如：Authorization、token
+      不满足可以自行填写
+    required: true
+    component:
+      name: a-auto-complete
+      options:
+        - value: Authorization
+        - value: token
   token:
     title: 鉴权信息
-    helper: Token
+    helper: Token值
     required: true
     encrypt: true
     component:
       name: a-input
       allowClear: true
+  privateKey:
+    title: 私钥key
+    value: key
+    helper: |
+      私钥请求KEY例如：key、privateKey
+      不满足可以自行填写
+    required: true
+    component:
+      name: a-auto-complete
+      options:
+        - value: key
+        - value: privateKey
+  publicKey:
+    title: 公钥key
+    value: cert
+    helper: |
+      公钥请求KEY例如：cert、publicKey
+      不满足可以自行填写
+    required: true
+    component:
+      name: a-auto-complete
+      options:
+        - value: cert
+        - value: publicKey
 showRunStrategy: false
 default:
   strategy:
@@ -35,5 +89,12 @@ content: |
   // 需要返回一个继承BaseAccess的类
   return class DeployCertByHTTPAccess extends BaseAccess {
     baseURL;
+    method;
+    skipSslVerify;
+    
+    tokenKey;
     token;
+
+    privateKey;
+    publicKey;
   }
